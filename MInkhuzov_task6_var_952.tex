@@ -1,0 +1,239 @@
+\documentclass[a4paper,12pt,titlepage,finall]{article}
+
+\usepackage[russian]{babel}
+\usepackage{geometry}
+\usepackage{multirow}
+\usepackage{indentfirst}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\usepackage[final]{listings}
+
+\pgfplotsset{compat=1.18, width=17cm}
+\usepgfplotslibrary{fillbetween}
+
+\geometry{a4paper,left=30mm,top=30mm,bottom=30mm,right=30mm}
+
+\setcounter{secnumdepth}{0}
+
+\begin{document}
+\lstset{basicstyle=\ttfamily,breaklines=true, numbers=left}
+
+% Титульный лист
+\begin{titlepage}
+    \begin{center}
+    {\small \sc Московский государственный университет \\имени М.~В.~Ломоносова\\ Факультет вычислительной математики и кибернетики\\}
+    \vfill
+    {\large \sc Отчёт по заданию №6}\\~\\
+    {\large \bf <<Сборка многомодульных программ. Вычисление корней уравнений и неопределённых интегралов.>>}\\~\\
+    {\large \bf Вариант 9 / 5 / 2}
+    \end{center}
+
+    \begin{flushright}
+    \vfill
+    {Выполнил:\\студент 105 группы\\Минхузов~Д.~В.\\~\\
+    Преподаватели:\\Гуляев~А.~В.\\Русол~А.~В.}
+    \end{flushright}
+
+    \begin{center}
+    \vfill
+    {\small Москва\\2024}
+    \end{center}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Постановка задачи}
+
+Реализовать численный метод, позволяющий вычислить площадь плоской фигуры, ограниченной тремя кривыми, заданных функциями $f_1(x)=\frac{3}{(x-1)^2+1}$, $f_2(x)=\sqrt{x+0.5}$, $f_3(x)=e^{-x}$. Для решения поставленной задачи также реализуются и используются метод трапеций вычисления определенного интеграла; методы хорд и отрезков вычисления корней уравнения на отрезке для нахождения вершин фигуры. При этом необходимо аналитически определить отрезки, на которых производится поиск корней.\\
+
+Также программа должна иметь модуль на языке Ассемблера, реализующий функции $f_1$, $f_2$, $f_3$ и вычисляющий их в вещественных значениях, используя сопроцессор x87. Функции должны быть реализованы по соглашению \tt{cdecl}.
+
+\newpage
+
+\section{Математическое обоснование}
+
+Для анализа предложенных функций построен график:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[name=graph, axis lines=middle, xlabel=x, ylabel=y, xmin=-4, xmax=4, ymin=-2, ymax=4]
+\addplot[color=red,samples=256,thick]{3/((x-1)^2+1)};
+\addlegendentry{$y=\frac{3}{(x-1)^2+1}$}
+\addplot[color=green, samples=256, thick]{sqrt(x+0.5)};
+\addlegendentry{$y=\sqrt{x+0.5}$}
+\addplot[color=blue, samples=256, thick]{e^(-x)};
+\addlegendentry{$y=e^{-x}$}
+\end{axis}
+\end{tikzpicture}
+\caption{Плоская фигура, ограниченная графикам заданных функций}
+\label{plot1}
+\end{figure}
+Рассмотрим необходимые свойства функции на данном отрезке, чтобы была возможность воспользоваться нашими методами:
+\begin{enumerate}
+    \item $f(a)f(b) < 0$;
+    \item $f$ непрерывно дифференцируема на $[a,b]$;
+    \item $f'$ монотонна и сохраняет знак на $[a,b]$.
+\end{enumerate}
+
+Исходя из этих требований разумно выбрать следующие отрезки для поиска корней:
+\begin{itemize}
+\item $f(x) = f_1(x) - f_2(x): [1, 2]$ (т.к. $f'(x) = \frac{6(x-1)}{((x-1)^2+1)^2} - \frac{1}{2\sqrt{x + 0.5}}$ убывает и $<0$);
+\item $f(x) = f_1(x) - f_3(x): [-0.262, 0.323]$ (т.к. $f'(x) = e^{-x} - \frac{6(x-1)}{((x-1)^2+1)^2}$ возрастает и $>0$);
+\item $f(x) = f_2(x) - f_3(x): [0, 1]$ (т.к. $f'(x) = \frac{1}{2\sqrt{x + 0.5}} + e^{-x}$ убывает и $>0$).
+\end{itemize}
+
+Используя следующую формулу (для $n$ отрезков разбиения на отрезке $[a, b]$), вычислим определенный интеграл методом трапеций: $\int \limits_a^b f(x) \mathrm{d}x = \frac{b-a}{2n}$\\ $\left( f(a)+f(b)+ 2\sum \limits_{k=1}^{n-1}f(x_k) \right) + R$, где $|R| = O(\frac{1}{n^2}) \approx \varepsilon_2$. Посмотрим на правило Рунге для метода трапеций: $\varepsilon_2 \approx \frac{1}{3}(I_{2n} - I_n)$, где $I_n$ - приближённое значение (без остатка) интеграла на отрезке $[a,b]$ с $n$ отрезками разбиения. Для определения площади, нам надо посичтать 3 определенных интеграла (для каждой пары функций), поэтому точность надо увеличить в 3 раза. Тогда заметим, что значения $\varepsilon_1 = \varepsilon_2 = 0.0001$ при $\varepsilon = 0.001$ (по условию задачи) достаточно.
+
+\newpage
+
+\section{Результаты экспериментов}
+
+При помощи программы с точностью $\varepsilon_1=0.0001$ найдены координаты вершин фигуры, ограниченной графиками заданных функций (таблица~\ref{table1}).
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+Кривые & $x$ & $y$ \\
+\hline
+1 и 2 & 1.95615 & 1.56721\\
+1 и 3 &  -0.20333 & 0.816009 \\
+2 и 3 & 0.18741 & 1.206122 \\
+\hline
+\end{tabular}
+\caption{Координаты точек пересечения}
+\label{table1}
+\end{table}
+
+Ниже приведен графики функций с закрашенной фигурой.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}
+\begin{axis}[name=graph, axis lines=middle, xlabel=x, ylabel=y, xmin=-4, xmax=4, ymin=-2, ymax=5, xticklabels={,,}, yticklabels={,,}]
+\addplot[color=red, samples=256, thick, name path=A]{3/((x-1)^2+1)};
+\addlegendentry{$y=\frac{3}{(x-1)^2+1}$}
+
+\addplot[color=green, domain=-2:2, samples=256, thick, name path=B]{sqrt(x+0.5)};
+\addlegendentry{$y=\sqrt{x+0.5}$}
+
+\addplot[color=blue, samples=256, thick, name path=C]{e^(-x)};
+\addlegendentry{$y=e^{-x}$}
+
+\addlegendimage{empty legend}\addlegendentry{}
+
+\addplot[blue!20, samples=256] fill between[of=A and C, soft clip={domain= -0.20333:0.18741}];
+\addplot[blue!20, samples=256] fill between[of=A and B, soft clip={domain=0.18741:1.95615}];
+\addlegendentry{$S=2.33866$}
+
+\addplot[dashed] coordinates { (1.95615, 1.56721) (1.95615, 0) };
+\addplot[color=black] coordinates { (1.95615, 0) } node [label={-90:{\small 1.95615}}] {};
+
+\addplot[dashed] coordinates { (-0.20333, 1.206122) (-0.20333, -0.5) };
+\addplot[color=black] coordinates { (-0.20333, -0.5) } node [label={-90:{\small-0.20333}}] {};
+
+\addplot[dashed] coordinates { (0.18741, 0.816009) (0.18741, 0) };
+\addplot[color=black] coordinates { (0.18741, 0) } node [label={-90:{\small 0.18741}}] {};
+\end{axis}
+\end{tikzpicture}
+\caption{Плоская фигура, ограниченная графиками заданных функций, ее площадь}
+\label{plot2}
+\end{figure}
+
+\newpage
+\newpage
+
+\section{Структура программы и спецификация функций}
+
+При работе программы используются следующие глобальные константы: \textt{ITERS\_MAX}, \textt{INTEGRAL\_ITERS\_MAX}, \textt{MAX\_INTEGRAL}. \textt{ITERS\_MAX} отвечает за максимальное число итераций в цикле поиска корня, т.к. при неоптимальных значениях отрезка поиск может идти слишком долго. \textt{INTEGRAL\_ITERS\_MAX} имеет такой же смысл, но используется для остановки при вычислении интеграла. Я сделал ее больше, из-за чего программа будет выполняться дольше при некоторых случаях, но в больших случаях с большей точностью сможет вычислить интеграл. Константа \textt{MAX\_INTEGRAL} отвечает за максимальное значение интеграла, нужна во избрежание переполнений. Также используется глобальный счетчик \textt{itersCnt}, который нужен для сохранения числа итераций во время вычисления корня.\\
+
+Функции \texttt{f1}, \texttt{f2}, \texttt{f3} для вычисления математических выражений написаны на языке NASM под 32-битную архитектуру и импортируются в Си коде из объектного файла \texttt{funcs.o}.\\
+
+Функция \texttt{main} парсит аргументы командной строки, указывает на ошибки в использовании, выводит справку. В зависимости от аргумента --mode/-M есть 3 варианта работы программы:
+\begin{enumerate}
+\item вызов функции \textt{area}, которая в свою очередь вызывает функции \textt{root} и \textt{integral} для подсчета площади, а также подсчета числа абсцисс точек пересечения, числа операций и их вывода при необходимости;
+\item вызов функции \texttt{root} с пользовательскими параметрами и вывод значения корня или сообщения об ошибке;
+\item вызов функции \texttt{integral} с пользовательскими параметрами и вывод значения определённого интеграла.
+\end{enumerate}
+
+Полный список используемых функций:
+\begin{itemize}
+\item \texttt{double root(double (*f)(double), double (*g)(double), double a, double b, double eps1)} вычисляет корень уравнения $f(x) = g(x)$ на заданном отрезке $[a, b]$ с точностью \textt{eps1}, выбор между методом хорд или отрезков осуществляется на этапе компиляции, выводит ошибки, если таковые появляются на этапе вычисления;
+\item \textt{double integral(double (*f)(double), double a, double b, double eps2)} вычисляет $\int \limits_a^b f(x) \mathrm{d}x$ с точностью \textt{eps2} методом трапеций, выводит ошибку если такие появляются на этапе вычисления;
+\item \texttt{double area(int flag\_inter, flag\_iter, double eps)} вычисляет площадь фигуры, ограниченной кривыми, заданными функциями $f_1$, $f_2$, $f_3$, с точностью \textt{eps}. Флаги \textt{absMode} и \textt{iterMode} показывают, нужно ли выводить абсциссы вершин фигуры и кол-во итераций, потребовавшихся для их нахождения, соответственно;
+\item \texttt{void printHello()} выводит базовую справку и предлагает посмотреть полноценную, выполняется при запуске программы без аргументов;
+\item \texttt{void printHelp()} выводит полную справку по программе.
+\end{itemize}
+
+\newpage
+
+\section{Сборка программы (Make-файл)}
+
+Makefile содержит следующие основные цели:
+\begin{enumerate}
+\item \texttt{all} - сборка программы;
+\item \texttt{clean} - удаление всех объектных и исполняемого файлов;
+\item \texttt{arc} - создания zip-архива со всеми файлами проекта.
+\end{enumerate}
+
+В задании требуется реализовать методы хорд и отрезков, выбор должен осуществляться на этапе компиляции. Это происходит при помощи флага \textt{-D}, при компиляции пользователь имеет возможность выбора переменной \textt{method}. Значение SECANT означает, что будет использоваться метод хорд, значение SEGMENT означает метод отрезков, также он является базовым вариантом при компиляции (если введено какое-либо другое значени) \\
+
+\begin{lstlisting}[language=make, caption={Текст Makefile}, captionpos=b]
+.PHONY: all clear arc
+
+all: main.o funcs.o mainProg
+
+funcs.o:
+	nasm -f elf32 funcs.asm -o funcs.o
+
+# Выбор метода решения с помощью переменной method:
+# SEGMENT - метод отрезков
+# SECANT - метод хорд
+main.o:
+	gcc -m32 -c main.c -o main.o -D $(method)
+
+mainProg:
+	gcc -m32 -lm main.o funcs.o -o main
+
+clean:
+	rm *.o main
+
+arc:
+	mkdir -p ARC
+	zip `date +%Y.%m.%d_%N`.zip main.c Makefile funcs.asm
+	mv *.zip ARC/
+\end{lstlisting}
+
+\newpage
+
+\section{Отладка программы, тестирование функций}
+
+Тестирование и отладка основного модуля на языке C происходило путем вывода в консоль интересующих значений в определенные моменты работы программы, в том числе повторный вызов функций. В ходе тестирования, полученные программой значения сравнивались с ответами Wolfram Mathematica; использовался сайт desmos.com для построения и первичного анализа кривых.\\
+
+\newpage
+
+\section{Программа на Си и на Ассемблере}
+
+Исходные тексты программы, модуля на языке Ассемблер и {\tt Makefile}'а имеются в архиве, который приложен к этому отчету.
+
+\newpage
+
+\section{Анализ допущенных ошибок}
+Первые допущенные ошибки были связаны с вычислением функции $e^{-x}$, а также последующие ошибки в тестировании, которые приводили к заблуждениям о корректности работы программы.
+.\\
+
+Также, реализация метода хорд изначально работала некорректно, могла выходить за рамки отрезка, по-разному работала при различных характерах выпуклости. Было допущено несколько ошибок, связанных с проверкой корректности данных, но они отлавливались довольно быстро.
+
+\newpage
+
+\begin{raggedright}
+\addcontentsline{toc}{section}{Список цитируемой литературы}
+\begin{thebibliography}{99}
+\bibitem{math} Ильин~В.\,А., Садовничий~В.\,А., Сендов~Бл.\,Х. Математический анализ. Т.\,1~---
+    Москва: Наука, 1985.
+\end{thebibliography}
+\end{raggedright}
+
+\end{document}
